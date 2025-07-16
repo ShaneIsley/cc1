@@ -1,0 +1,47 @@
+# ============================================
+# Main Configuration for PoE Trading Suite
+# ============================================
+
+# --- Core Settings ---
+# The default league to analyze if none is specified.
+default_league: "Mercenaries"
+
+# --- Analysis Configuration ---
+analysis:
+  # Used for PPH estimations. Assumes a quick buy/vendor/sell cycle.
+  assumed_flips_per_hour: 120
+  # Thresholds (in Chaos) for assigning risk profiles based on profit standard deviation.
+  profit_volatility_risk_thresholds:
+    Low: 15
+    Medium: 50
+    High: 150
+    Extreme: 500
+  # How many chaos above the minimum price to include an item in a shopping list.
+  shopping_list_price_tolerance_chaos: 2.0
+  # How many top results to show in detailed breakdowns (e.g., top 5 jackpots).
+  num_jackpots_to_display: 5
+
+# --- API & Caching Configuration ---
+api:
+  base_url: "https://poe.ninja/api/data/"
+  trade_url_base: "https://www.pathofexile.com/trade/exchange/"
+  # Items to completely exclude from all analyses.
+  item_blacklist:
+    - "Vaal Gem"
+    - "Awakened Support Gem"
+    - "Exceptional Gem"
+    - "Portal"
+    - "Detonate Mines"
+    - "Brand Recall"
+  # Minimum number of listings for an item to be considered liquid (for currency/fragments).
+  minimum_listings: 10
+
+# --- Strategy-Specific Configuration ---
+strategies:
+  gem_corruption:
+    # Probabilities for Vaal Orb outcomes on a gem.
+    probabilities:
+      no_change: 0.25
+      level_change: 0.25 # This is split 50/50 between +1 and -1
+      quality_change: 0.25
+      vaal_version: 0.25
