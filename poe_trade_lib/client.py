@@ -3,6 +3,11 @@ import pandas as pd
 
 from . import api, core, utils
 from .config import settings
+from .logging_config import ensure_logging_initialized, get_logger
+
+# Initialize logging
+ensure_logging_initialized()
+logger = get_logger(__name__)
 
 
 class PoeAnalysisClient:
@@ -15,7 +20,7 @@ class PoeAnalysisClient:
         self.league = league or settings.get("default_league")
         self.data_cache = None
         self.results = None
-        print(f"PoeAnalysisClient initialized for league: '{self.league}'")
+        logger.info(f"PoeAnalysisClient initialized for league: '{self.league}'")
 
     def fetch_data(self):
         """Fetches all necessary market data from the API."""
@@ -27,10 +32,13 @@ class PoeAnalysisClient:
         Returns a list of AnalysisResult objects.
         """
         if not self.data_cache:
-            print("Data not fetched. Call fetch_data() before running analysis.")
+            logger.info("Data not cached. Fetching data before running analysis.")
             self.fetch_data()
 
         self.results = core.run_all_analyses(self.data_cache, self.league)
+        logger.info(
+            f"Analysis complete - {len(self.results)} profitable strategies found"
+        )
         return self.results
 
     def get_summary_dataframe(self) -> pd.DataFrame:
@@ -39,7 +47,7 @@ class PoeAnalysisClient:
         Returns an empty DataFrame if analysis has not been run.
         """
         if not self.results:
-            print("Analysis not run. Call run_analysis() first.")
+            logger.warning("Analysis not run. Call run_analysis() first.")
             return pd.DataFrame()
 
         results_dict_list = []

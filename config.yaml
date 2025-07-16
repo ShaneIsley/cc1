@@ -37,6 +37,33 @@ api:
   minimum_listings: 10
 
 # --- Strategy-Specific Configuration ---
+# --- Logging Configuration ---
+logging:
+  # Global logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+  level: "INFO"
+  # Log format string
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  # Date format for timestamps
+  date_format: "%Y-%m-%d %H:%M:%S"
+  # Log file configuration
+  file:
+    enabled: true
+    path: "logs/poe_trading.log"
+    max_size_mb: 10
+    backup_count: 5
+    level: "DEBUG"
+  # Console logging configuration
+  console:
+    enabled: true
+    level: "INFO"
+    # Whether to use colored output (if colorlog is available)
+    colored: true
+  # Module-specific log levels
+  modules:
+    poe_trade_lib.api: "DEBUG"
+    poe_trade_lib.strategies: "INFO"
+    poe_trade_lib.db_utils: "INFO"
+
 strategies:
   gem_corruption:
     # Probabilities for Vaal Orb outcomes on a gem.

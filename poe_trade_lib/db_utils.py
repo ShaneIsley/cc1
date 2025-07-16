@@ -5,7 +5,16 @@ from pathlib import Path
 
 import pandas as pd
 
+from .logging_config import (
+    ensure_logging_initialized,
+    get_logger,
+    log_database_operation,
+)
 from .models import AnalysisResult
+
+# Initialize logging
+ensure_logging_initialized()
+logger = get_logger(__name__)
 
 DB_PATH = Path(__file__).parent.parent.parent / "data" / "historical_trades.db"
 
@@ -37,7 +46,7 @@ def initialize_database():
 def log_results_to_db(results: list[AnalysisResult], league: str):
     """Logs a list of AnalysisResult objects to the SQLite database."""
     if not results:
-        print("No results to log.")
+        logger.info("No results to log to database")
         return
 
     conn = sqlite3.connect(DB_PATH)
@@ -46,6 +55,7 @@ def log_results_to_db(results: list[AnalysisResult], league: str):
     timestamp = int(time.time())
 
     logged_count = 0
+    duplicate_count = 0
     for r in results:
         try:
             cursor.execute(
@@ -69,13 +79,18 @@ def log_results_to_db(results: list[AnalysisResult], league: str):
             )
             logged_count += 1
         except sqlite3.IntegrityError:
-            print(
-                f"Warning: Duplicate entry for {r.strategy_name} at timestamp {timestamp}. Skipping."
+            duplicate_count += 1
+            logger.debug(
+                f"Duplicate entry for {r.strategy_name} at timestamp {timestamp} - skipping"
             )
 
     conn.commit()
     conn.close()
-    print(f"Successfully logged {logged_count} results to the database at {DB_PATH}")
+
+    if duplicate_count > 0:
+        logger.warning(f"Skipped {duplicate_count} duplicate entries")
+
+    log_database_operation("insert", logged_count)
 
 
 def get_historical_data(strategy_name: str, league: str) -> pd.DataFrame:

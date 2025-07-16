@@ -3,6 +3,11 @@ import pandas as pd
 
 from poe_trade_lib import db_utils, utils
 from poe_trade_lib.client import PoeAnalysisClient
+from poe_trade_lib.logging_config import ensure_logging_initialized, get_logger
+
+# Initialize logging
+ensure_logging_initialized()
+logger = get_logger(__name__)
 
 
 def main():
@@ -14,6 +19,7 @@ def main():
     client.fetch_data()
     analysis_results = client.run_analysis()
     if not analysis_results:
+        logger.warning("No profitable strategies found.")
         print("No profitable strategies found.")
         return
 

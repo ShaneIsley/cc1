@@ -4,8 +4,13 @@ import pandas as pd
 
 from .. import utils
 from ..config import settings
+from ..logging_config import ensure_logging_initialized, get_logger
 from ..models import AnalysisResult
 from .base_strategy import BaseStrategy
+
+# Initialize logging
+ensure_logging_initialized()
+logger = get_logger(__name__)
 
 
 class GemLevelingStrategy(BaseStrategy):
@@ -28,18 +33,18 @@ class GemLevelingStrategy(BaseStrategy):
                 "chaosEquivalent"
             ].iloc[0]
         except (IndexError, KeyError):
-            print("Warning: Could not find Vaal Orb price. Skipping Gem strategy.")
+            logger.warning("Could not find Vaal Orb price. Skipping Gem strategy.")
             return []
 
         gems_l1_q0 = gem_df[
             (gem_df["gemLevel"] == 1)
             & (gem_df.get("gemQuality", 0) == 0)
-            & (not gem_df.get("corrupted", False))
+            & (gem_df.get("corrupted", False) != True)  # noqa: E712
         ]
         gems_l20_q0 = gem_df[
             (gem_df["gemLevel"] == 20)
             & (gem_df.get("gemQuality", 0) == 0)
-            & (not gem_df.get("corrupted", False))
+            & (gem_df.get("corrupted", False) != True)  # noqa: E712
         ]
         gems_l19_q20 = gem_df[
             (gem_df["gemLevel"] == 19)

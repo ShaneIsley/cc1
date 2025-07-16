@@ -8,6 +8,16 @@ import requests
 
 from . import utils
 from .config import settings
+from .logging_config import (
+    ensure_logging_initialized,
+    get_logger,
+    log_api_request,
+    log_data_acquisition,
+)
+
+# Initialize logging
+ensure_logging_initialized()
+logger = get_logger(__name__)
 
 CACHE_DIR = Path(__file__).parent.parent / "cache"
 CACHE_EXPIRATION_SECONDS = 15 * 60
@@ -22,7 +32,9 @@ def get_poe_ninja_data(overview_type: str, item_type: str, league: str) -> pd.Da
         if time.time() - cache_file.stat().st_mtime < CACHE_EXPIRATION_SECONDS:
             with open(cache_file) as f:
                 data = json.load(f)
-                return pd.DataFrame(data)
+                df = pd.DataFrame(data)
+                log_data_acquisition(item_type, len(df), cache_hit=True)
+                return df
 
     base_url = settings.get("api.base_url")
     url = f"{base_url}{overview_type}?league={league}&type={item_type}"
@@ -31,7 +43,11 @@ def get_poe_ninja_data(overview_type: str, item_type: str, league: str) -> pd.Da
         response = requests.get(url)
         response.raise_for_status()
         data = response.json().get("lines", [])
+
+        log_api_request(url, response.status_code)
+
         if not data:
+            logger.warning(f"No data returned for {item_type} in {league}")
             return pd.DataFrame()
 
         with open(cache_file, "w") as f:
@@ -51,20 +67,32 @@ def get_poe_ninja_data(overview_type: str, item_type: str, league: str) -> pd.Da
         )
 
         if name_field:
+            blacklisted_count = len(df[df[name_field].isin(item_blacklist)])
             df = df[~df[name_field].isin(item_blacklist)]
+            if blacklisted_count > 0:
+                logger.debug(
+                    f"Filtered out {blacklisted_count} blacklisted items for {item_type}"
+                )
 
         if "count" in df.columns:
+            low_liquidity_count = len(df[df["count"] < min_listings])
             df = df[df["count"] >= min_listings]
+            if low_liquidity_count > 0:
+                logger.debug(
+                    f"Filtered out {low_liquidity_count} low-liquidity items for {item_type}"
+                )
 
+        log_data_acquisition(item_type, len(df), cache_hit=False)
         return df
     except requests.exceptions.RequestException as e:
-        print(f"Error fetching data for '{item_type}' in {league}: {e}")
+        log_api_request(url, error=str(e))
         return pd.DataFrame()
 
 
 def fetch_all_data(league: str) -> dict:
     """Fetches all required data types and updates global divine price."""
-    print("Fetching all required data from poe.ninja (using cache where possible)...")
+    logger.info(f"Starting data acquisition for league: {league}")
+
     data_cache = {
         "Currency": get_poe_ninja_data("currencyoverview", "Currency", league),
         "Tattoo": get_poe_ninja_data("itemoverview", "Tattoo", league),
@@ -72,7 +100,9 @@ def fetch_all_data(league: str) -> dict:
         "Essence": get_poe_ninja_data("itemoverview", "Essence", league),
         "Gem": get_poe_ninja_data("itemoverview", "SkillGem", league),
     }
-    print("Data acquisition complete.")
+
+    total_records = sum(len(df) for df in data_cache.values())
+    logger.info(f"Data acquisition complete - {total_records} total records retrieved")
 
     if not data_cache["Currency"].empty:
         try:
@@ -80,10 +110,10 @@ def fetch_all_data(league: str) -> dict:
                 data_cache["Currency"]["currencyTypeName"] == "Divine Orb"
             ]["chaosEquivalent"].iloc[0]
             utils.DIVINE_TO_CHAOS = div_price
-            print(
-                f"Live rates updated: 1 Divine Orb = {utils.DIVINE_TO_CHAOS:.0f} Chaos\n"
+            logger.info(
+                f"Live rates updated: 1 Divine Orb = {utils.DIVINE_TO_CHAOS:.0f} Chaos"
             )
         except (IndexError, TypeError):
-            print("Warning: Could not update Divine Orb price. Using default.\n")
+            logger.warning("Could not update Divine Orb price. Using default value.")
 
     return data_cache
