@@ -21,14 +21,27 @@ from .logging_config import (
 ensure_logging_initialized()
 logger = get_logger(__name__)
 
-CACHE_DIR = Path(__file__).parent.parent / "cache"
 CACHE_EXPIRATION_SECONDS = 15 * 60
+
+
+def get_cache_dir() -> Path:
+    """Get the cache directory from configuration, with fallback to default location."""
+    try:
+        # Get configured path relative to project root
+        config_path = settings.get("paths.cache_dir", "cache")
+        # Project root is 2 levels up from this file (poe_trade_lib/api.py)
+        project_root = Path(__file__).parent.parent
+        return project_root / str(config_path)
+    except Exception:
+        # Fallback to original hardcoded path
+        return Path(__file__).parent.parent / "cache"
 
 
 def get_poe_ninja_data(overview_type: str, item_type: str, league: str) -> pd.DataFrame:
     """Fetches and cleans item data, using a local file-based cache."""
-    CACHE_DIR.mkdir(exist_ok=True)
-    cache_file = CACHE_DIR / f"{league}_{item_type}.json"
+    cache_dir = get_cache_dir()
+    cache_dir.mkdir(exist_ok=True)
+    cache_file = cache_dir / f"{league}_{item_type}.json"
 
     if cache_file.exists():
         if time.time() - cache_file.stat().st_mtime < CACHE_EXPIRATION_SECONDS:

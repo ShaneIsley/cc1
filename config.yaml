@@ -6,6 +6,13 @@
 # The default league to analyze if none is specified.
 default_league: "Mercenaries"
 
+# --- File Paths ---
+paths:
+  # Directory for caching API responses (relative to project root)
+  cache_dir: "cache"
+  # Database file for storing historical analysis results (relative to project root)
+  database_file: "data/historical_trades.db"
+
 # --- Analysis Configuration ---
 analysis:
   # Used for PPH estimations. Assumes a quick buy/vendor/sell cycle.

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from .config import settings
 from .logging_config import (
     ensure_logging_initialized,
     get_logger,
@@ -18,13 +19,25 @@ from .models import AnalysisResult
 ensure_logging_initialized()
 logger = get_logger(__name__)
 
-DB_PATH = Path(__file__).parent.parent.parent / "data" / "historical_trades.db"
+
+def get_database_path() -> Path:
+    """Get the database path from configuration, with fallback to default location."""
+    try:
+        # Get configured path relative to project root
+        config_path = settings.get("paths.database_file", "data/historical_trades.db")
+        # Project root is 3 levels up from this file (poe_trade_lib/db_utils.py)
+        project_root = Path(__file__).parent.parent.parent
+        return project_root / str(config_path)
+    except Exception:
+        # Fallback to original hardcoded path
+        return Path(__file__).parent.parent.parent / "data" / "historical_trades.db"
 
 
 def initialize_database() -> None:
     """Creates the database and the results table if they don't exist."""
-    DB_PATH.parent.mkdir(exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    db_path = get_database_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
     cursor.execute("""
@@ -51,7 +64,7 @@ def log_results_to_db(results: list[AnalysisResult], league: str) -> None:
         logger.info("No results to log to database")
         return
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(get_database_path())
     cursor = conn.cursor()
 
     timestamp = int(time.time())
@@ -97,10 +110,10 @@ def log_results_to_db(results: list[AnalysisResult], league: str) -> None:
 
 def get_historical_data(strategy_name: str, league: str) -> pd.DataFrame:
     """Retrieves and formats historical data for a specific strategy from the database."""
-    if not DB_PATH.exists():
+    if not get_database_path().exists():
         return pd.DataFrame()
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(get_database_path())
     try:
         query = "SELECT * FROM trade_results WHERE strategy_name = ? AND league = ? ORDER BY timestamp"
         df = pd.read_sql_query(query, conn, params=(strategy_name, league))
