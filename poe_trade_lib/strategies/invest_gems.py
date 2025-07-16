@@ -42,39 +42,6 @@ class GemLevelingStrategy(BaseStrategy):
         if any(df is None or df.empty for df in [gem_df, currency_df]) or not gem_probs:
             return []
 
-        # Debug: examine gem data structure
-        logger.debug(f"Total gems in dataset: {len(gem_df)}")
-        if len(gem_df) > 0:
-            logger.debug(f"Gem columns: {list(gem_df.columns)}")
-            logger.debug(
-                f"Sample gem levels: {gem_df['gemLevel'].value_counts().head()}"
-            )
-            logger.debug(
-                f"Sample gem quality values: {gem_df.get('gemQuality', pd.Series()).value_counts().head()}"
-            )
-            logger.debug(
-                f"Sample corrupted values: {gem_df.get('corrupted', pd.Series()).value_counts().head()}"
-            )
-
-            # Check for non-corrupted gems
-            non_corrupted = gem_df[gem_df.get("corrupted", False) != True]  # noqa: E712
-            logger.debug(f"Non-corrupted gems found: {len(non_corrupted)}")
-
-            # Check specific level/quality combinations
-            l1_gems = gem_df[gem_df["gemLevel"] == 1]
-            logger.debug(f"Level 1 gems: {len(l1_gems)}")
-            if len(l1_gems) > 0:
-                logger.debug(
-                    f"Level 1 gem quality distribution: {l1_gems.get('gemQuality', pd.Series()).value_counts().head()}"
-                )
-
-            l20_gems = gem_df[gem_df["gemLevel"] == 20]
-            logger.debug(f"Level 20 gems: {len(l20_gems)}")
-            if len(l20_gems) > 0:
-                logger.debug(
-                    f"Level 20 gem quality distribution: {l20_gems.get('gemQuality', pd.Series()).value_counts().head()}"
-                )
-
         try:
             vaal_price = currency_df[currency_df["currencyTypeName"] == "Vaal Orb"][
                 "chaosEquivalent"
@@ -118,9 +85,6 @@ class GemLevelingStrategy(BaseStrategy):
             & (gem_df.get("corrupted", True))
         ]
 
-        logger.debug(
-            f"Gems L1Q20: {len(gems_l1_q20)}, Gems L20Q20 base: {len(gems_l20_q20_base)}"
-        )
         if gems_l1_q20.empty or gems_l20_q20_base.empty:
             logger.info(
                 "No suitable gems found for leveling strategy (empty L1Q20 or L20Q20 base dataset)"
@@ -180,10 +144,6 @@ class GemLevelingStrategy(BaseStrategy):
         profitable_gems = base_df[
             base_df["profit_with_corruption_ev"] > 10
         ].sort_values("profit_with_corruption_ev", ascending=False)
-
-        logger.debug(
-            f"Found {len(profitable_gems)} profitable gems out of {len(base_df)} total gems"
-        )
 
         results = []
         for _, row in profitable_gems.head(15).iterrows():
