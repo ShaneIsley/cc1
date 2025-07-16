@@ -1,4 +1,6 @@
 # poe_trade_lib/utils.py
+from __future__ import annotations
+
 import json
 from urllib.parse import quote
 
@@ -38,7 +40,9 @@ def generate_bulk_trade_url(
 
 def get_risk_profile(std_dev: float) -> str:
     """Assigns a risk profile string based on profit volatility."""
-    risk_thresholds = settings.get("analysis.profit_volatility_risk_thresholds", {})
+    risk_thresholds: dict[str, float] = settings.get(
+        "analysis.profit_volatility_risk_thresholds", {}
+    )
     if np.isnan(std_dev) or std_dev == 0:
         return "None"
     for profile, threshold in sorted(risk_thresholds.items(), key=lambda item: item[1]):

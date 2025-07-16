@@ -1,5 +1,8 @@
 # poe_trade_lib/config.py
+from __future__ import annotations
+
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -7,10 +10,10 @@ import yaml
 class _Config:
     """A singleton class to load and provide access to the project's config.yaml."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._config = self._load_config()
 
-    def _load_config(self):
+    def _load_config(self) -> dict[str, Any]:
         """Loads configuration from config.yaml in the project root."""
         config_path = Path(__file__).parent.parent / "config.yaml"
         if not config_path.exists():
@@ -19,9 +22,12 @@ class _Config:
                 "Ensure config.yaml is in the project root directory."
             )
         with open(config_path) as f:
-            return yaml.safe_load(f)
+            config = yaml.safe_load(f)
+            if not isinstance(config, dict):
+                raise ValueError("Configuration file must contain a YAML mapping")
+            return config
 
-    def get(self, key_path: str, default=None):
+    def get(self, key_path: str, default: Any = None) -> Any:
         """
         Retrieves a config value using a dot-separated path.
         Example: settings.get('api.base_url')

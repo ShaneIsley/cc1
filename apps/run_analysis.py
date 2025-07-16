@@ -1,4 +1,6 @@
 # apps/run_analysis.py
+from __future__ import annotations
+
 import pandas as pd
 
 from poe_trade_lib import db_utils, utils
@@ -10,7 +12,7 @@ ensure_logging_initialized()
 logger = get_logger(__name__)
 
 
-def main():
+def main() -> None:
     """
     A command-line application demonstrating the use of the PoeAnalysisClient
     and displaying historical trends for the top strategy.

@@ -1,4 +1,6 @@
 # apps/log_results.py
+from __future__ import annotations
+
 from poe_trade_lib import db_utils
 from poe_trade_lib.client import PoeAnalysisClient
 from poe_trade_lib.logging_config import ensure_logging_initialized, get_logger
@@ -8,7 +10,7 @@ ensure_logging_initialized()
 logger = get_logger(__name__)
 
 
-def main():
+def main() -> None:
     """
     This script runs the full analysis and logs the results to the database.
     It is designed to be run automatically by a scheduler (e.g., cron).

@@ -1,4 +1,6 @@
 # poe_trade_lib/db_utils.py
+from __future__ import annotations
+
 import sqlite3
 import time
 from pathlib import Path
@@ -19,7 +21,7 @@ logger = get_logger(__name__)
 DB_PATH = Path(__file__).parent.parent.parent / "data" / "historical_trades.db"
 
 
-def initialize_database():
+def initialize_database() -> None:
     """Creates the database and the results table if they don't exist."""
     DB_PATH.parent.mkdir(exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
@@ -43,7 +45,7 @@ def initialize_database():
     conn.close()
 
 
-def log_results_to_db(results: list[AnalysisResult], league: str):
+def log_results_to_db(results: list[AnalysisResult], league: str) -> None:
     """Logs a list of AnalysisResult objects to the SQLite database."""
     if not results:
         logger.info("No results to log to database")

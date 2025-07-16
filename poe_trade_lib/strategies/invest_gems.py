@@ -31,6 +31,12 @@ class GemLevelingStrategy(BaseStrategy):
     def analyze(self, data_cache: dict, league: str) -> list[AnalysisResult]:
         gem_df = data_cache.get("Gem")
         currency_df = data_cache.get("Currency")
+
+        # Type narrowing: ensure we have the expected DataFrames
+        if not isinstance(gem_df, pd.DataFrame) or not isinstance(
+            currency_df, pd.DataFrame
+        ):
+            return []
         gem_probs = settings.get("strategies.gem_corruption.probabilities", {})
 
         if any(df is None or df.empty for df in [gem_df, currency_df]) or not gem_probs:

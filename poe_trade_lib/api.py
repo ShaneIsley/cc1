@@ -1,4 +1,6 @@
 # poe_trade_lib/api.py
+from __future__ import annotations
+
 import json
 import time
 from pathlib import Path
@@ -89,7 +91,7 @@ def get_poe_ninja_data(overview_type: str, item_type: str, league: str) -> pd.Da
         return pd.DataFrame()
 
 
-def fetch_all_data(league: str) -> dict:
+def fetch_all_data(league: str) -> dict[str, pd.DataFrame]:
     """Fetches all required data types and updates global divine price."""
     logger.info(f"Starting data acquisition for league: {league}")
 

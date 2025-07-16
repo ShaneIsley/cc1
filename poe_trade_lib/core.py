@@ -1,5 +1,8 @@
 # poe_trade_lib/core.py
+from __future__ import annotations
+
 import inspect
+from typing import Any
 
 from . import strategies
 from .logging_config import (
@@ -7,6 +10,7 @@ from .logging_config import (
     get_logger,
     log_strategy_execution,
 )
+from .models import AnalysisResult
 from .strategies.base_strategy import BaseStrategy
 
 # Initialize logging
@@ -14,7 +18,7 @@ ensure_logging_initialized()
 logger = get_logger(__name__)
 
 
-def run_all_analyses(data_cache: dict, league: str):
+def run_all_analyses(data_cache: dict[str, Any], league: str) -> list[AnalysisResult]:
     """
     Dynamically discovers and runs all implemented strategies.
 
