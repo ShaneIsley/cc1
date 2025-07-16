@@ -21,11 +21,17 @@ class _Config:
                 f"Configuration file not found at '{config_path}'. "
                 "Ensure config.yaml is in the project root directory."
             )
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
-            if not isinstance(config, dict):
-                raise ValueError("Configuration file must contain a YAML mapping")
-            return config
+        try:
+            with open(config_path) as f:
+                config = yaml.safe_load(f)
+        except yaml.YAMLError as e:
+            raise ValueError(f"Invalid YAML in configuration file: {e}") from e
+        except OSError as e:
+            raise FileNotFoundError(f"Could not read configuration file: {e}") from e
+
+        if not isinstance(config, dict):
+            raise ValueError("Configuration file must contain a YAML mapping")
+        return config
 
     def get(self, key_path: str, default: Any = None) -> Any:
         """

@@ -24,7 +24,9 @@ def generate_bulk_trade_url(
     item_names_list: list, league: str, currency_to_have: str = "chaos"
 ) -> str:
     """Generates a clickable PoE trade URL for bulk item exchange."""
-    trade_url_base = settings.get("api.trade_url_base")
+    trade_url_base = settings.get(
+        "api.trade_url_base", "https://www.pathofexile.com/trade/exchange/"
+    )
     if not item_names_list:
         return "N/A"
     query = {

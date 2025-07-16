@@ -22,7 +22,7 @@ class PoeAnalysisClient:
     """
 
     def __init__(self, league: str | None = None) -> None:
-        self.league = league or settings.get("default_league")
+        self.league = league or settings.get("default_league", "Standard")
         self.data_cache: dict[str, Any] | None = None
         self.results: list[AnalysisResult] | None = None
         logger.info(f"PoeAnalysisClient initialized for league: '{self.league}'")

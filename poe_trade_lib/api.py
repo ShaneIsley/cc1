@@ -63,7 +63,7 @@ def get_poe_ninja_data(overview_type: str, item_type: str, league: str) -> pd.Da
                     f"Error reading cache file for {item_type}: {e}, re-fetching"
                 )
 
-    base_url = settings.get("api.base_url")
+    base_url = settings.get("api.base_url", "https://poe.ninja/api/data/")
     url = f"{base_url}{overview_type}?league={league}&type={item_type}"
 
     try:
