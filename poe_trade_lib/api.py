@@ -45,11 +45,23 @@ def get_poe_ninja_data(overview_type: str, item_type: str, league: str) -> pd.Da
 
     if cache_file.exists():
         if time.time() - cache_file.stat().st_mtime < CACHE_EXPIRATION_SECONDS:
-            with open(cache_file) as f:
-                data = json.load(f)
-                df = pd.DataFrame(data)
-                log_data_acquisition(item_type, len(df), cache_hit=True)
-                return df
+            try:
+                with open(cache_file) as f:
+                    data = json.load(f)
+
+                # Validate cached data structure
+                if not isinstance(data, list):
+                    logger.warning(
+                        f"Invalid cached data structure for {item_type}, re-fetching"
+                    )
+                else:
+                    df = pd.DataFrame(data)
+                    log_data_acquisition(item_type, len(df), cache_hit=True)
+                    return df
+            except (json.JSONDecodeError, OSError) as e:
+                logger.warning(
+                    f"Error reading cache file for {item_type}: {e}, re-fetching"
+                )
 
     base_url = settings.get("api.base_url")
     url = f"{base_url}{overview_type}?league={league}&type={item_type}"
@@ -57,7 +69,26 @@ def get_poe_ninja_data(overview_type: str, item_type: str, league: str) -> pd.Da
     try:
         response = requests.get(url)
         response.raise_for_status()
-        data = response.json().get("lines", [])
+
+        # Validate JSON response structure
+        try:
+            json_data = response.json()
+        except requests.exceptions.JSONDecodeError as e:
+            logger.error(f"Invalid JSON response for {item_type} in {league}: {e}")
+            return pd.DataFrame()
+
+        if not isinstance(json_data, dict):
+            logger.error(
+                f"Expected JSON object for {item_type} in {league}, got {type(json_data)}"
+            )
+            return pd.DataFrame()
+
+        data = json_data.get("lines", [])
+        if not isinstance(data, list):
+            logger.error(
+                f"Expected 'lines' to be a list for {item_type} in {league}, got {type(data)}"
+            )
+            return pd.DataFrame()
 
         log_api_request(url, response.status_code)
 
@@ -65,10 +96,25 @@ def get_poe_ninja_data(overview_type: str, item_type: str, league: str) -> pd.Da
             logger.warning(f"No data returned for {item_type} in {league}")
             return pd.DataFrame()
 
-        with open(cache_file, "w") as f:
-            json.dump(data, f)
+        # Validate data items structure
+        valid_data = []
+        for item in data:
+            if not isinstance(item, dict):
+                logger.debug(
+                    f"Skipping non-dict item in {item_type} data: {type(item)}"
+                )
+                continue
+            valid_data.append(item)
 
-        df = pd.DataFrame(data)
+        if len(valid_data) < len(data):
+            logger.warning(
+                f"Filtered out {len(data) - len(valid_data)} invalid items from {item_type} data"
+            )
+
+        with open(cache_file, "w") as f:
+            json.dump(valid_data, f)
+
+        df = pd.DataFrame(valid_data)
         item_blacklist = settings.get("api.item_blacklist", [])
         min_listings = settings.get("api.minimum_listings", 10)
 
