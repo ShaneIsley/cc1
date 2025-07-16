@@ -61,7 +61,7 @@ logging:
   # Module-specific log levels
   modules:
     poe_trade_lib.api: "DEBUG"
-    poe_trade_lib.strategies: "INFO"
+    poe_trade_lib.strategies: "DEBUG"
     poe_trade_lib.db_utils: "INFO"
 
 strategies:
