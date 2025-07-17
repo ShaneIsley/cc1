@@ -1,40 +1,144 @@
 name: Run PoE Analysis and Log Results
 
 on:
-  workflow_dispatch: # Allows you to run the job manually from the GitHub UI
+  workflow_dispatch: # Allows manual runs
+    inputs:
+      force_run:
+        description: 'Force run even if no market changes detected'
+        required: false
+        default: false
+        type: boolean
   schedule:
     # Runs at 30 minutes past the hour, every hour
     - cron: '30 * * * *'
 
+# Explicit permissions for security
+permissions:
+  contents: write
+  actions: read
+
 jobs:
   run-analysis:
     runs-on: ubuntu-latest
+    timeout-minutes: 15 # Prevent hanging jobs
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Need history for change detection
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip' # Cache pip dependencies
 
-      - name: Install dependencies
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dependencies with uv
+        run: uv sync
+
+      - name: Check for recent database updates (skip if too recent)
+        id: check_recent
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          if [ -f "data/historical_trades.db" ]; then
+            # Skip if database was updated in last 45 minutes (unless forced)
+            if [ "$(find data/historical_trades.db -mmin -45)" ] && [ "${{ github.event.inputs.force_run }}" != "true" ]; then
+              echo "skip=true" >> $GITHUB_OUTPUT
+              echo "Database updated recently, skipping analysis"
+            else
+              echo "skip=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
 
-      - name: Run the logging script
-        run: python -m apps.log_results
+      - name: Run the analysis
+        if: steps.check_recent.outputs.skip != 'true'
+        id: analysis
+        run: |
+          echo "Starting PoE trading analysis..."
+          uv run python -m apps.log_results
+          echo "Analysis completed successfully"
+        continue-on-error: true
 
-      - name: Get current date
-        id: date
-        run: echo "date=$(date --iso-8601=seconds)" >> $GITHUB_ENV
+      - name: Check if database was modified
+        if: steps.check_recent.outputs.skip != 'true'
+        id: db_check
+        run: |
+          if git diff --quiet data/historical_trades.db; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "No database changes detected"
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "Database changes detected"
+          fi
+
+      - name: Generate analysis summary
+        if: steps.check_recent.outputs.skip != 'true'
+        id: summary
+        run: |
+          if [ -f "data/historical_trades.db" ]; then
+            # Get database stats
+            DB_SIZE=$(du -h data/historical_trades.db | cut -f1)
+            echo "db_size=$DB_SIZE" >> $GITHUB_OUTPUT
+
+            # Get record count (if sqlite3 is available)
+            if command -v sqlite3 >/dev/null; then
+              RECORD_COUNT=$(sqlite3 data/historical_trades.db "SELECT COUNT(*) FROM trade_results;" 2>/dev/null || echo "N/A")
+              echo "record_count=$RECORD_COUNT" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Upload analysis artifacts
+        if: steps.check_recent.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: analysis-results-${{ github.run_number }}
+          path: |
+            data/historical_trades.db
+            logs/*.log
+          retention-days: 7
+
+      - name: Get current timestamp
+        if: steps.db_check.outputs.changed == 'true'
+        id: timestamp
+        run: echo "timestamp=$(date --iso-8601=seconds)" >> $GITHUB_OUTPUT
 
       - name: Commit and push database changes
+        if: steps.db_check.outputs.changed == 'true'
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "Automated: Update trade database [${{ env.date }}]"
+          commit_message: |
+            Automated: Update trade database [${{ steps.timestamp.outputs.timestamp }}]
+
+            - Database size: ${{ steps.summary.outputs.db_size || 'Unknown' }}
+            - Total records: ${{ steps.summary.outputs.record_count || 'Unknown' }}
+            - Analysis status: ${{ steps.analysis.outcome }}
           file_pattern: 'data/historical_trades.db'
-          commit_user_name: "GitHub Actions Bot"
-          commit_user_email: "actions@github.com"
-          commit_author: "GitHub Actions Bot <actions@github.com>"
+          commit_user_name: "PoE Analysis Bot"
+          commit_user_email: "poe-analysis-bot@users.noreply.github.com"
+          commit_author: "PoE Analysis Bot <poe-analysis-bot@users.noreply.github.com>"
+
+      - name: Report analysis failure
+        if: failure() && steps.analysis.outcome == 'failure'
+        run: |
+          echo "::error::PoE analysis failed. Check logs for details."
+          echo "Analysis failed at $(date --iso-8601=seconds)" >> $GITHUB_STEP_SUMMARY
+
+      - name: Add success summary
+        if: success() && steps.check_recent.outputs.skip != 'true'
+        run: |
+          echo "## PoE Analysis Complete ✅" >> $GITHUB_STEP_SUMMARY
+          echo "- **Timestamp:** ${{ steps.timestamp.outputs.timestamp || 'No changes' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Database Size:** ${{ steps.summary.outputs.db_size || 'Unknown' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Total Records:** ${{ steps.summary.outputs.record_count || 'Unknown' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Changes:** ${{ steps.db_check.outputs.changed == 'true' && 'Database updated' || 'No changes' }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Add skip summary
+        if: steps.check_recent.outputs.skip == 'true'
+        run: |
+          echo "## PoE Analysis Skipped ⏭️" >> $GITHUB_STEP_SUMMARY
+          echo "Database was updated recently (within 45 minutes)" >> $GITHUB_STEP_SUMMARY
