@@ -15,13 +15,16 @@ logger = get_logger(__name__)
 
 class GemLevelingStrategy(BaseStrategy):
     """
-    FIXME: This strategy needs to be corrected to properly implement the traditional
-    3x level 1 gems → vendor recipe → level 20 quality 20 gem approach.
+    Implements the proper Path of Exile gem vendor recipe strategy:
 
-    Current implementation uses L1Q20 → L20Q20 which doesn't match the actual
-    gem leveling strategy that requires 3 level 1 gems to vendor for quality.
+    1. Buy 3x Level 1, Quality 0 gems (cheapest input)
+    2. Level all 3 gems to Level 20, Quality 0
+    3. Vendor recipe: 3x L20Q0 → 1x L1Q20 (quality upgrade)
+    4. Level the L1Q20 gem to L20Q20 (final product)
+    5. Optionally corrupt L20Q20 for 21/20 or 20/23 outcomes
 
-    Analyzes the long-term investment of buying, leveling, and corrupting skill gems.
+    This strategy leverages the vendor recipe system to efficiently obtain
+    high-quality gems for corruption or direct sale.
     """
 
     @property
@@ -50,126 +53,197 @@ class GemLevelingStrategy(BaseStrategy):
             logger.warning("Could not find Vaal Orb price. Skipping Gem strategy.")
             return []
 
-        # FIXME: This is a workaround because poe.ninja doesn't track low-quality gems
-        # The proper strategy should be:
-        # 1. Buy 3x level 1, quality 0 gems (cheapest)
-        # 2. Level all 3 to level 20
-        # 3. Vendor recipe: 3x level 20 → 1x level 1 with +1 quality
-        # 4. Repeat until 20% quality, then level to 20 and corrupt
-        #
-        # Current workaround: Buy level 1, quality 20 gems (already with quality from market)
-        # Level to 20, then corrupt for 21/20 or 20/23 outcomes
-        gems_l1_q20 = gem_df[
-            (gem_df["gemLevel"] == 1)
-            & (gem_df.get("gemQuality", 20) == 20)
-            & (gem_df.get("corrupted", False) != True)  # noqa: E712
-        ]
-        gems_l20_q20_base = gem_df[
-            (gem_df["gemLevel"] == 20)
-            & (gem_df.get("gemQuality", 20) == 20)
-            & (gem_df.get("corrupted", False) != True)  # noqa: E712
-        ]
-        gems_l19_q20 = gem_df[
-            (gem_df["gemLevel"] == 19)
-            & (gem_df.get("gemQuality", 20) == 20)
-            & (gem_df.get("corrupted", True))
-        ]
-        gems_l21_q20 = gem_df[
-            (gem_df["gemLevel"] == 21)
-            & (gem_df.get("gemQuality", 20) == 20)
-            & (gem_df.get("corrupted", True))
-        ]
-        gems_l20_q23 = gem_df[
-            (gem_df["gemLevel"] == 20)
-            & (gem_df.get("gemQuality", 23) == 23)
-            & (gem_df.get("corrupted", True))
-        ]
+        # Find gems with complete vendor recipe chain
+        profitable_gems = self._find_vendor_recipe_opportunities(
+            gem_df, vaal_price, gem_probs
+        )
 
-        if gems_l1_q20.empty or gems_l20_q20_base.empty:
-            logger.info(
-                "No suitable gems found for leveling strategy (empty L1Q20 or L20Q20 base dataset)"
-            )
+        if profitable_gems.empty:
+            logger.info("No profitable vendor recipe opportunities found")
             return []
-
-        base_df = pd.merge(
-            gems_l1_q20[["name", "chaosValue"]],
-            gems_l20_q20_base[["name", "chaosValue"]],
-            on="name",
-            suffixes=("_buy_l1", "_sell_l20_base"),
-        )
-
-        for df, suffix in [
-            (gems_l19_q20, "_l19"),
-            (gems_l21_q20, "_l21"),
-            (gems_l20_q23, "_q23"),
-        ]:
-            if not df.empty:
-                base_df = pd.merge(
-                    base_df,
-                    df[["name", "chaosValue"]],
-                    on="name",
-                    how="left",
-                    suffixes=("", suffix),
-                )
-
-        for col in [
-            c for c in base_df.columns if "_l19" in c or "_l21" in c or "_q23" in c
-        ]:
-            base_df[col] = base_df[col].fillna(0)
-
-        # Calculate profit from leveling: L1Q20 → L20Q20
-        base_df["profit_level_only"] = (
-            base_df["chaosValue_sell_l20_base"] - base_df["chaosValue_buy_l1"]
-        )
-
-        prob_plus_lvl = gem_probs.get("level_change", 0) / 2
-        prob_minus_lvl = gem_probs.get("level_change", 0) / 2
-        prob_qual = gem_probs.get("quality_change", 0)
-
-        ev_lvl_plus = prob_plus_lvl * (
-            base_df.get("chaosValue_l21", 0) - base_df["chaosValue_sell_l20_base"]
-        )
-        ev_lvl_minus = prob_minus_lvl * (
-            base_df.get("chaosValue_l19", 0) - base_df["chaosValue_sell_l20_base"]
-        )
-        ev_qual = prob_qual * (
-            base_df.get("chaosValue_q23", 0) - base_df["chaosValue_sell_l20_base"]
-        )
-
-        base_df["corruption_ev"] = ev_lvl_plus + ev_lvl_minus + ev_qual - vaal_price
-        base_df["profit_with_corruption_ev"] = (
-            base_df["profit_level_only"] + base_df["corruption_ev"]
-        )
-
-        profitable_gems = base_df[
-            base_df["profit_with_corruption_ev"] > 10
-        ].sort_values("profit_with_corruption_ev", ascending=False)
 
         results = []
         for _, row in profitable_gems.head(15).iterrows():
             result = AnalysisResult(
-                strategy_name=f"Gem Invest: {row['name']}",
-                profit_per_flip=row["profit_level_only"],
-                input_cost=row[
-                    "chaosValue_buy_l1"
-                ],  # Cost of 1x level 1 quality 20 gem
+                strategy_name=f"Gem Recipe: {row['name']}",
+                profit_per_flip=row["vendor_recipe_profit"],
+                input_cost=row["total_input_cost"],
                 volatility_std_dev=0,
                 risk_profile="Investment",
                 profit_per_hour_est=0,
                 liquidity_score=None,  # Not applicable for this type of long-term investment
-                shopping_list=[f"{row['name']} (Level 1, 20% Quality)"],
+                shopping_list=[f"3x {row['name']} (Level 1, 0% Quality)"],
                 trade_url=utils.generate_bulk_trade_url([row["name"]], league),
                 details={
-                    "Buy Price (L1Q20)": row["chaosValue_buy_l1"],
-                    "Profit (Level Only)": row["profit_level_only"],
+                    "Input Cost (3x L1Q0)": row["total_input_cost"],
+                    "Vendor Recipe Profit": row["vendor_recipe_profit"],
                     "Corruption EV": row["corruption_ev"],
-                    "Sell Price (L20Q20)": row["chaosValue_sell_l20_base"],
-                    "Sell Price (L21Q20)": row.get("chaosValue_l21", 0),
-                    "Sell Price (L19Q20)": row.get("chaosValue_l19", 0),
-                    "Sell Price (L20Q23)": row.get("chaosValue_q23", 0),
+                    "Total Profit": row["total_profit"],
+                    "L1Q0 Price": row["l1q0_price"],
+                    "L20Q20 Price": row["l20q20_price"],
+                    "L21Q20 Price": row.get("l21q20_price", 0),
+                    "L20Q23 Price": row.get("l20q23_price", 0),
                 },
                 long_term=True,
-                profit_with_corruption_ev=row["profit_with_corruption_ev"],
+                profit_with_corruption_ev=row["total_profit"],
             )
             results.append(result)
         return results
+
+    def _find_vendor_recipe_opportunities(
+        self, gem_df: pd.DataFrame, vaal_price: float, gem_probs: dict
+    ) -> pd.DataFrame:
+        """Find gems with complete vendor recipe chain and calculate profitability."""
+
+        # Filter out awakened gems (they don't follow normal vendor recipe)
+        regular_gems = gem_df[~gem_df["name"].str.contains("Awakened", na=False)]
+
+        # Get gem variants by level/quality
+        l1_q0_gems = regular_gems[
+            (regular_gems["gemLevel"] == 1)
+            & (regular_gems["gemQuality"].isna())
+            & ~regular_gems.get("corrupted", False)
+        ]
+
+        l20_q20_gems = regular_gems[
+            (regular_gems["gemLevel"] == 20)
+            & (regular_gems["gemQuality"] == 20)
+            & ~regular_gems.get("corrupted", False)
+        ]
+
+        # Find gems that have both L1Q0 and L20Q20 variants
+        l1_q0_names = set(l1_q0_gems["name"].unique())
+        l20_q20_names = set(l20_q20_gems["name"].unique())
+        viable_gems = l1_q0_names.intersection(l20_q20_names)
+
+        if not viable_gems:
+            return pd.DataFrame()
+
+        # Calculate vendor recipe profitability
+        results = []
+        for gem_name in viable_gems:
+            gem_data = self._calculate_gem_recipe_profit(
+                gem_name, regular_gems, vaal_price, gem_probs
+            )
+            if gem_data and gem_data["total_profit"] > 10:  # Minimum profit threshold
+                results.append(gem_data)
+
+        if not results:
+            return pd.DataFrame()
+
+        return pd.DataFrame(results).sort_values("total_profit", ascending=False)
+
+    def _calculate_gem_recipe_profit(
+        self, gem_name: str, gem_df: pd.DataFrame, vaal_price: float, gem_probs: dict
+    ) -> dict | None:
+        """Calculate profit for a specific gem using vendor recipe strategy."""
+
+        # Get gem variants
+        gem_variants = gem_df[gem_df["name"] == gem_name]
+
+        # L1Q0 gems (starting input)
+        l1_q0 = gem_variants[
+            (gem_variants["gemLevel"] == 1)
+            & (gem_variants["gemQuality"].isna())
+            & ~gem_variants.get("corrupted", False)
+        ]
+
+        # L20Q20 gems (final product)
+        l20_q20 = gem_variants[
+            (gem_variants["gemLevel"] == 20)
+            & (gem_variants["gemQuality"] == 20)
+            & ~gem_variants.get("corrupted", False)
+        ]
+
+        # Corrupted variants for EV calculation
+        l21_q20 = gem_variants[
+            (gem_variants["gemLevel"] == 21)
+            & (gem_variants["gemQuality"] == 20)
+            & (gem_variants.get("corrupted", True))
+        ]
+
+        l20_q23 = gem_variants[
+            (gem_variants["gemLevel"] == 20)
+            & (gem_variants["gemQuality"] == 23)
+            & (gem_variants.get("corrupted", True))
+        ]
+
+        l19_q20 = gem_variants[
+            (gem_variants["gemLevel"] == 19)
+            & (gem_variants["gemQuality"] == 20)
+            & (gem_variants.get("corrupted", True))
+        ]
+
+        # Check if we have the required variants
+        if l1_q0.empty or l20_q20.empty:
+            return None
+
+        # Extract prices
+        l1_q0_price = l1_q0.iloc[0]["chaosValue"]
+        l20_q20_price = l20_q20.iloc[0]["chaosValue"]
+
+        # Calculate vendor recipe profit
+        total_input_cost = l1_q0_price * 3  # Need 3x L1Q0 gems
+        vendor_recipe_profit = l20_q20_price - total_input_cost
+
+        # Calculate corruption expected value
+        corruption_ev = self._calculate_corruption_ev(
+            l20_q20_price, l21_q20, l20_q23, l19_q20, vaal_price, gem_probs
+        )
+
+        total_profit = vendor_recipe_profit + corruption_ev
+
+        return {
+            "name": gem_name,
+            "l1q0_price": l1_q0_price,
+            "l20q20_price": l20_q20_price,
+            "l21q20_price": l21_q20.iloc[0]["chaosValue"] if not l21_q20.empty else 0,
+            "l20q23_price": l20_q23.iloc[0]["chaosValue"] if not l20_q23.empty else 0,
+            "total_input_cost": total_input_cost,
+            "vendor_recipe_profit": vendor_recipe_profit,
+            "corruption_ev": corruption_ev,
+            "total_profit": total_profit,
+        }
+
+    def _calculate_corruption_ev(
+        self,
+        base_price: float,
+        l21_q20: pd.DataFrame,
+        l20_q23: pd.DataFrame,
+        l19_q20: pd.DataFrame,
+        vaal_price: float,
+        gem_probs: dict,
+    ) -> float:
+        """Calculate expected value from corrupting a L20Q20 gem."""
+
+        # Corruption probabilities
+        prob_plus_lvl = gem_probs.get("level_change", 0) / 2  # +1 level
+        prob_minus_lvl = gem_probs.get("level_change", 0) / 2  # -1 level
+        prob_qual = gem_probs.get("quality_change", 0)  # +3 quality
+        prob_no_change = gem_probs.get("no_change", 0)  # No change
+
+        # Expected value calculation
+        ev_gain: float = 0
+
+        # L21Q20 outcome
+        if not l21_q20.empty:
+            l21_price = l21_q20.iloc[0]["chaosValue"]
+            ev_gain += prob_plus_lvl * (l21_price - base_price)
+
+        # L20Q23 outcome
+        if not l20_q23.empty:
+            l20_q23_price = l20_q23.iloc[0]["chaosValue"]
+            ev_gain += prob_qual * (l20_q23_price - base_price)
+
+        # L19Q20 outcome (loss)
+        if not l19_q20.empty:
+            l19_price = l19_q20.iloc[0]["chaosValue"]
+            ev_gain += prob_minus_lvl * (l19_price - base_price)
+
+        # No change outcome (no gain/loss on gem value)
+        ev_gain += prob_no_change * 0
+
+        # Subtract vaal orb cost
+        corruption_ev = ev_gain - vaal_price
+
+        return corruption_ev
